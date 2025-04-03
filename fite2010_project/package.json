@@ -1,0 +1,23 @@
+{
+  "name": "fite2010_project",
+  "version": "1.0.0",
+  "main": "hardhat.config.js",
+  "directories": {
+    "test": "test"
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/raynsj/fite2010_project.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/raynsj/fite2010_project/issues"
+  },
+  "homepage": "https://github.com/raynsj/fite2010_project#readme",
+  "description": ""
+}
