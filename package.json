@@ -19,5 +19,8 @@
     "url": "https://github.com/raynsj/fite2010_project/issues"
   },
   "homepage": "https://github.com/raynsj/fite2010_project#readme",
-  "description": ""
+  "description": "",
+  "devDependencies": {
+    "hardhat": "^2.22.19"
+  }
 }
