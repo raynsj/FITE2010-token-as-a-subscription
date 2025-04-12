@@ -122,10 +122,15 @@ contract SubscriptionToken {
     }
     
     function withdrawFunds() external onlyOwner {
-        uint256 amount = address(this).balance;
-        (bool success, ) = owner.call{value: amount}("");
-        require(success, "Transfer failed");
-    }
+    uint256 amount = address(this).balance;
+    // Update state before external call
+    uint256 contractBalance = amount;
+    amount = 0;
+    
+    // Perform external call after state updates
+    (bool success, ) = owner.call{value: contractBalance}("");
+    require(success, "Transfer failed");
+}
     
     function fallbackFunction(address user, uint256 platformId) external {
         if (balanceOf[user] >= 1 && services[platformId].exists) {
