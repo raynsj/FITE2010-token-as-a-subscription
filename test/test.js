@@ -192,19 +192,41 @@ describe("SharedSubscriptionToken", function () {
       .calculateCostPerMember(serviceId1, accountId);
     const receipt = await tx.wait();
 
-    // Find the SubscriptionUpdate event
-    const event = receipt.events.find((e) => e.event === "SubscriptionUpdate");
+    // Fixed event parsing for newer ethers.js versions
+    const eventInterface =
+      sharedSubscriptionToken.interface.getEvent("SubscriptionUpdate");
+    const topicHash = eventInterface.topicHash;
+
+    // Find the log with matching topic hash and parse it
+    const log = receipt.logs.find((x) => x.topics[0] === topicHash);
+    const event = sharedSubscriptionToken.interface.parseLog({
+      data: log.data,
+      topics: log.topics,
+    });
 
     // Get service cost
     const [__, serviceCost] = await sharedSubscriptionToken.getServiceDetails(
       serviceId1
     );
 
-    // Check cost division
-    expect(event.args.serviceId).to.equal(serviceId1);
-    expect(event.args.accountId).to.equal(accountId);
-    expect(event.args.numMembers).to.equal(3);
-    expect(event.args.costPerMember * BigInt(3)).to.equal(serviceCost);
+    // Fix: Account for integer division rounding in Solidity
+    // When 10 ether is divided by 3, and then multiplied by 3 again,
+    // there might be a rounding error of 1 wei due to integer division
+    const costPerMember = event.args[3];
+    const totalCostAfterDivision = costPerMember * BigInt(3);
+
+    console.log("Original service cost:", serviceCost.toString());
+    console.log("Cost per member:", costPerMember.toString());
+    console.log("Cost per member * 3:", totalCostAfterDivision.toString());
+
+    // Check the difference is very small (due to integer division rounding)
+    const difference = serviceCost - totalCostAfterDivision;
+    expect(difference).to.be.lessThanOrEqual(BigInt(3)); // Difference should be at most 3 wei (1 wei per member)
+
+    // Check other event parameters
+    expect(event.args[0]).to.equal(serviceId1); // serviceId
+    expect(event.args[1]).to.equal(accountId); // accountId
+    expect(event.args[2]).to.equal(3); // numMembers
   });
 
   it("Should expire subscriptions after the designated time", async function () {
