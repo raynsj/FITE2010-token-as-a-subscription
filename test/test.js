@@ -389,4 +389,123 @@ describe("SharedSubscriptionToken", function () {
       hre.ethers.parseEther("0.0001") // Allow for small gas calculation differences
     );
   });
+
+  //Jayden added
+  describe("Voting System", function () {
+    beforeEach(async function () {
+      // Setup: Allow up to 5 users in a single subscription account
+      await sharedSubscriptionToken.connect(owner).updateMaxUsersPerSubscription(5);
+  
+      // User1, User2, User3, User4, and User5 buy tokens and subscribe to the same service
+      for (let i = 0; i < 5; i++) {
+        const user = [user1, user2, user3, user4, user5][i];
+        await sharedSubscriptionToken.connect(user).buyTokens(1, { value: tokenPrice });
+        await sharedSubscriptionToken.connect(user).subscribe(serviceId1);
+      }
+    });
+  
+    it("Should allow creating a proposal to kick a user", async function () {
+      // Get the account ID for User1
+      const [_, accountId] = await sharedSubscriptionToken.getUserSubscriptionDetails(user1.address, serviceId1);
+  
+      // User1 proposes to kick User5
+      await sharedSubscriptionToken.connect(user1).proposeToKickUser(serviceId1, accountId, user5.address);
+  
+      // Get the proposal count
+      const proposalCount = await sharedSubscriptionToken.getProposalCount(serviceId1, accountId);
+  
+      // Get proposal details using the getter function
+      const proposal = await sharedSubscriptionToken.getProposal(serviceId1, accountId, proposalCount);
+  
+      // Verify the proposal details
+      expect(proposal.proposer).to.equal(user1.address);
+      expect(proposal.userToKick).to.equal(user5.address);
+    });
+  
+    it("Should execute successful kick proposal", async function () {
+      // Get the account ID for User1
+      const [_, accountId] = await sharedSubscriptionToken.getUserSubscriptionDetails(user1.address, serviceId1);
+  
+      // User1 proposes to kick User5
+      await sharedSubscriptionToken.connect(user1).proposeToKickUser(serviceId1, accountId, user5.address);
+  
+      // Other users vote "yes" to kick User5
+      await sharedSubscriptionToken.connect(user2).voteOnProposal(serviceId1, accountId, 1, true);
+      await sharedSubscriptionToken.connect(user3).voteOnProposal(serviceId1, accountId, 1, true);
+      await sharedSubscriptionToken.connect(user4).voteOnProposal(serviceId1, accountId, 1, true);
+  
+      // Fast-forward time by 25 hours (beyond the voting period of 24 hours)
+      await hre.ethers.provider.send("evm_increaseTime", [60 * 60 * 25]);
+      await hre.ethers.provider.send("evm_mine");
+  
+      // Execute the proposal
+      await sharedSubscriptionToken.connect(user4).executeProposal(serviceId1, accountId, 1);
+  
+      // Verify that User5 was removed from the subscription
+      const isMember = await sharedSubscriptionToken.isSubscriptionActive(user5.address, serviceId1);
+      expect(isMember).to.be.false;
+  
+      // Verify that User5 is no longer in the membership list
+      const members = await sharedSubscriptionToken.getSubscriptionMembers(serviceId1, accountId);
+      expect(members).to.not.include(user5.address);
+    });
+  
+    it("Should prevent double voting", async function () {
+      // Get the account ID for User1
+      const [_, accountId] = await sharedSubscriptionToken.getUserSubscriptionDetails(user1.address, serviceId1);
+  
+      // User1 proposes to kick User5
+      await sharedSubscriptionToken.connect(user1).proposeToKickUser(serviceId1, accountId, user5.address);
+  
+      // User2 votes "yes"
+      await sharedSubscriptionToken.connect(user2).voteOnProposal(serviceId1, accountId, 1, true);
+  
+      // Attempt to vote again as User2 (should fail)
+      await expect(
+        sharedSubscriptionToken.connect(user2).voteOnProposal(serviceId1, accountId, 1, true)
+      ).to.be.revertedWithCustomError(sharedSubscriptionToken, "AlreadyVoted");
+    });
+  
+    it("Should not allow a non-member to propose or vote", async function () {
+      // Get the account ID for User6 (who is not a member)
+      const [_, accountId] = await sharedSubscriptionToken.getUserSubscriptionDetails(user1.address, serviceId1);
+  
+      // Attempt to propose as a non-member (User6)
+      await expect(
+        sharedSubscriptionToken.connect(user6).proposeToKickUser(serviceId1, accountId, user5.address)
+      ).to.be.revertedWith("Not a member");
+  
+      // Attempt to vote as a non-member (User6)
+      await expect(
+        sharedSubscriptionToken.connect(user6).voteOnProposal(serviceId1, accountId, 0, true)
+      ).to.be.revertedWithCustomError(sharedSubscriptionToken, "NotMember");
+    });
+  
+    it("Should not allow a user to propose themselves for removal", async function () {
+      // Get the account ID for User3
+      const [_, accountId] = await sharedSubscriptionToken.getUserSubscriptionDetails(user3.address, serviceId1);
+  
+      // Attempt to propose themselves for removal
+      await expect(
+        sharedSubscriptionToken.connect(user3).proposeToKickUser(serviceId1, accountId, user3.address)
+      ).to.be.revertedWith("Cannot propose yourself");
+    });
+  
+    it("Should not allow voting after the voting period has ended", async function () {
+      // Get the account ID for User4
+      const [_, accountId] = await sharedSubscriptionToken.getUserSubscriptionDetails(user4.address, serviceId1);
+  
+      // User4 proposes to kick User3
+      await sharedSubscriptionToken.connect(user4).proposeToKickUser(serviceId1, accountId, user3.address);
+  
+      // Fast-forward time by more than the voting period (25 hours)
+      await hre.ethers.provider.send("evm_increaseTime", [60 * 60 * 25]);
+      await hre.ethers.provider.send("evm_mine");
+  
+      // Attempt to vote after the voting period has ended (should fail)
+      await expect(
+        sharedSubscriptionToken.connect(user2).voteOnProposal(serviceId1, accountId, 0, true)
+      ).to.be.revertedWithCustomError(sharedSubscriptionToken, "VotingPeriodEnded");
+    });
+  }); 
 });
