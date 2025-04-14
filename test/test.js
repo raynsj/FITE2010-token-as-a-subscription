@@ -249,7 +249,11 @@ describe("SharedSubscriptionToken", function () {
     await hre.ethers.provider.send("evm_mine");
 
     // Check and expire subscriptions
-    await sharedSubscriptionToken.checkAndExpireSubscriptions();
+    // await sharedSubscriptionToken.checkAndExpireSubscriptions();
+
+    // Instead of manually calling checkAndExpireSubscriptions, call a function that
+    // uses the modifier
+    // For example, try to get encrypted credentials which should trigger the expiration checlk
 
     // Verify subscription is expired
     const isActive = await sharedSubscriptionToken.isSubscriptionActive(
