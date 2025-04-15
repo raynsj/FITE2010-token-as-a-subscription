@@ -11,6 +11,8 @@ contract SharedSubscriptionToken {
     uint256 public subscriptionDuration = 30 days;
     uint256 public maxUsersPerSubscription = 5; // Maximum users per subscription account
     
+    mapping(address => uint256) public lastProposalTime;
+
     struct ServiceInfo {
         bool exists;
         uint256 cost;
@@ -305,8 +307,8 @@ contract SharedSubscriptionToken {
         _locked = false;
     }
     
-    // Withdraw funds from contract
-    function withdrawFunds() external onlyOwner {
+    // Withdraw funds from contract and prevent reentrancy
+    function withdrawFunds() external onlyOwner nonReentrant{
         uint256 amount = address(this).balance;
         // Update state before external call
         uint256 contractBalance = amount;
@@ -381,6 +383,14 @@ contract SharedSubscriptionToken {
         require(account.isMember[userToKick], "User not in this account");
         require(userToKick != msg.sender, "Cannot propose yourself");
 
+        // Rate limiting: Ensure the user waits at least 12 hours between proposals
+        require(
+            block.timestamp > lastProposalTime[msg.sender] + 12 hours,
+            "Wait before proposing again"
+        );
+
+        lastProposalTime[msg.sender] = block.timestamp;
+        
         uint256 proposalId = ++account.proposalCount;
         Proposal storage proposal = account.proposals[proposalId];
         
@@ -426,6 +436,9 @@ contract SharedSubscriptionToken {
         require(block.timestamp > proposal.endTime, "Voting ongoing");
         require(account.isMember[proposal.userToKick], "Already kicked");
 
+        // SAFETY CHECK: ensure at least 2 members to avoid underflow
+        require(account.members.length >= 2, "Not enough members to execute proposal");
+
         uint256 totalMembers = account.members.length - 1; // Exclude userToKick
         uint256 requiredVotes = (totalMembers / 2) + 1;
         
@@ -467,6 +480,7 @@ contract SharedSubscriptionToken {
     {
         SubscriptionAccount storage account = subscriptionAccounts[serviceId][accountId];
         Proposal storage proposal = account.proposals[proposalId];
+
         return (
             proposal.proposer,
             proposal.userToKick,
