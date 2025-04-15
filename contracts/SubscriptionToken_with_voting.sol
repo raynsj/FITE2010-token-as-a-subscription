@@ -200,12 +200,20 @@ contract SharedSubscriptionToken {
     }
     
     // Get encrypted credentials for a user
-    function getEncryptedCredentials(uint256 serviceId) external checkSubscriptionActive(serviceId) returns (bytes memory) {
+    function getEncryptedCredentials(uint256 serviceId) external view returns (bytes memory) {
+        // We'll need to manually check subscription expiration instead of using the modifier
+        // since modifiers with state changes can't be used with view functions
+        
         UserSubscription storage userSub = userSubscriptions[msg.sender][serviceId];
         require(userSub.exists, "Not subscribed to this service");
         
         uint256 accountId = userSub.accountId;
-        return subscriptionAccounts[serviceId][accountId].encryptedCredentials[msg.sender];
+        SubscriptionAccount storage account = subscriptionAccounts[serviceId][accountId];
+        
+        // Manual check for expiration
+        require(account.active && account.expirationTime >= block.timestamp, "Subscription has expired");
+        
+        return account.encryptedCredentials[msg.sender];
     }
     
     // Check all subscriptions and expire those that have passed their time

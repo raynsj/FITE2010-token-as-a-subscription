@@ -307,11 +307,22 @@ describe("SharedSubscriptionToken", function () {
       .connect(user1)
       .storeEncryptedCredentials(serviceId1, mockEncryptedData);
 
-    // Retrieve credentials
+    // Retrieve credentials - make sure to await the result
     const retrievedData = await sharedSubscriptionToken
       .connect(user1)
       .getEncryptedCredentials(serviceId1);
 
+    // Debug outputs
+    console.log("Mock data:", mockEncryptedData);
+    console.log("Retrieved data:", retrievedData);
+    console.log(
+      "Types - Mock:",
+      typeof mockEncryptedData,
+      "Retrieved:",
+      typeof retrievedData
+    );
+
+    // Compare the actual data values
     expect(retrievedData).to.equal(mockEncryptedData);
   });
 
