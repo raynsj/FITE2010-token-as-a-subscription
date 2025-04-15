@@ -271,7 +271,8 @@ contract SharedSubscriptionToken {
         if (!userSub.exists) return false;
         
         uint256 accountId = userSub.accountId;
-        return subscriptionAccounts[serviceId][accountId].active;
+        SubscriptionAccount storage account = subscriptionAccounts[serviceId][accountId];
+        return account.active && account.expirationTime >= block.timestamp;
     }
     
     // Add a new service
