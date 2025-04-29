@@ -1,6 +1,44 @@
 const hre = require("hardhat");
 const { expect } = require("chai");
 const { ethers } = require("hardhat");
+const crypto = require("crypto");
+
+// Helper functions for encryption/decryption
+function generateKeyPair() {
+  return crypto.generateKeyPairSync("rsa", {
+    modulusLength: 2048,
+    publicKeyEncoding: {
+      type: "spki",
+      format: "pem",
+    },
+    privateKeyEncoding: {
+      type: "pkcs8",
+      format: "pem",
+    },
+  });
+}
+
+function encryptWithPublicKey(publicKey, data) {
+  const encryptedData = crypto.publicEncrypt(
+    {
+      key: publicKey,
+      padding: crypto.constants.RSA_PKCS1_OAEP_PADDING,
+    },
+    Buffer.from(data)
+  );
+  return encryptedData;
+}
+
+function decryptWithPrivateKey(privateKey, encryptedData) {
+  const decryptedData = crypto.privateDecrypt(
+    {
+      key: privateKey,
+      padding: crypto.constants.RSA_PKCS1_OAEP_PADDING,
+    },
+    encryptedData
+  );
+  return decryptedData.toString();
+}
 
 describe("SharedSubscriptionToken", function () {
   let sharedSubscriptionToken;
@@ -8,6 +46,9 @@ describe("SharedSubscriptionToken", function () {
   const serviceId1 = 1; // Netflix
   const serviceId2 = 2; // Spotify
   const tokenPrice = hre.ethers.parseEther("0.01"); // 0.01 ETH per token
+
+  // Store key pairs for testing
+  const keyPairs = {};
 
   beforeEach(async function () {
     [owner, user1, user2, user3, user4, user5, user6] =
@@ -248,13 +289,6 @@ describe("SharedSubscriptionToken", function () {
     await hre.ethers.provider.send("evm_increaseTime", [60 * 60 * 24 * 31]); // Advance 31 days
     await hre.ethers.provider.send("evm_mine");
 
-    // Check and expire subscriptions
-    // await sharedSubscriptionToken.checkAndExpireSubscriptions();
-
-    // Instead of manually calling checkAndExpireSubscriptions, call a function that
-    // uses the modifier
-    // For example, try to get encrypted credentials which should trigger the expiration checlk
-
     // Verify subscription is expired
     const isActive = await sharedSubscriptionToken.isSubscriptionActive(
       user1.address,
@@ -290,87 +324,6 @@ describe("SharedSubscriptionToken", function () {
     expect(isActive).to.be.true;
   });
 
-  it("Should allow storing and retrieving encrypted credentials", async function () {
-    // Setup: Buy tokens and subscribe
-    await sharedSubscriptionToken
-      .connect(user1)
-      .buyTokens(1, { value: tokenPrice });
-    await sharedSubscriptionToken.connect(user1).subscribe(serviceId1);
-
-    // Mock encrypted credentials (in real app this would be encrypted with user's public key)
-    const mockEncryptedData = ethers.encodeBytes32String(
-      "encryptedCredentials"
-    );
-
-    // Store credentials
-    await sharedSubscriptionToken
-      .connect(user1)
-      .storeEncryptedCredentials(serviceId1, mockEncryptedData);
-
-    // Retrieve credentials - make sure to await the result
-    const retrievedData = await sharedSubscriptionToken
-      .connect(user1)
-      .getEncryptedCredentials(serviceId1);
-
-    // Debug outputs
-    console.log("Mock data:", mockEncryptedData);
-    console.log("Retrieved data:", retrievedData);
-    console.log(
-      "Types - Mock:",
-      typeof mockEncryptedData,
-      "Retrieved:",
-      typeof retrievedData
-    );
-
-    // Compare the actual data values
-    expect(retrievedData).to.equal(mockEncryptedData);
-  });
-
-  it("Should allow admin to set base credentials for subscription accounts", async function () {
-    // Setup: User subscribes to create an account
-    await sharedSubscriptionToken
-      .connect(user1)
-      .buyTokens(1, { value: tokenPrice });
-    await sharedSubscriptionToken.connect(user1).subscribe(serviceId1);
-
-    // Get account ID
-    const [_, accountId] =
-      await sharedSubscriptionToken.getUserSubscriptionDetails(
-        user1.address,
-        serviceId1
-      );
-
-    // Admin sets base credentials
-    const mockUsername = "service_username";
-    const mockPassword = "encrypted_password";
-
-    await sharedSubscriptionToken
-      .connect(owner)
-      .setBaseCredentials(serviceId1, accountId, mockUsername, mockPassword);
-  });
-
-  it("Should not allow non-admin to set base credentials", async function () {
-    // Setup: User subscribes to create an account
-    await sharedSubscriptionToken
-      .connect(user1)
-      .buyTokens(1, { value: tokenPrice });
-    await sharedSubscriptionToken.connect(user1).subscribe(serviceId1);
-
-    // Get account ID
-    const [_, accountId] =
-      await sharedSubscriptionToken.getUserSubscriptionDetails(
-        user1.address,
-        serviceId1
-      );
-
-    // Non-admin tries to set base credentials
-    await expect(
-      sharedSubscriptionToken
-        .connect(user2)
-        .setBaseCredentials(serviceId1, accountId, "username", "password")
-    ).to.be.revertedWith("Ownable: caller is not the owner");
-  });
-
   it("Should allow admin to withdraw funds", async function () {
     // First, ensure there are funds in the contract
     await sharedSubscriptionToken
@@ -403,6 +356,205 @@ describe("SharedSubscriptionToken", function () {
       initialOwnerBalance + initialContractBalance - gasUsed,
       hre.ethers.parseEther("0.0001") // Allow for small gas calculation differences
     );
+  });
+
+  // New test suite for public key encryption system
+  describe("Public Key Encryption System", function () {
+    beforeEach(async function () {
+      // Generate key pairs for test users
+      for (const user of [user1, user2, user3]) {
+        keyPairs[user.address] = generateKeyPair();
+      }
+
+      // Users buy tokens and subscribe
+      for (const user of [user1, user2, user3]) {
+        await sharedSubscriptionToken
+          .connect(user)
+          .buyTokens(1, { value: tokenPrice });
+        await sharedSubscriptionToken.connect(user).subscribe(serviceId1);
+      }
+    });
+
+    it("Should allow users to register public keys", async function () {
+      // User1 registers their public key
+      await sharedSubscriptionToken
+        .connect(user1)
+        .registerPublicKey(keyPairs[user1.address].publicKey);
+
+      // Verify the public key was stored correctly
+      const storedPublicKey = await sharedSubscriptionToken.getPublicKey(
+        user1.address
+      );
+      expect(storedPublicKey).to.equal(keyPairs[user1.address].publicKey);
+    });
+
+    it("Should allow owner to store encrypted credentials for users", async function () {
+      // User1 registers their public key
+      await sharedSubscriptionToken
+        .connect(user1)
+        .registerPublicKey(keyPairs[user1.address].publicKey);
+
+      // Service credentials to share
+      const serviceCredentials = {
+        username: "netflix_user123",
+        password: "securePassword!456",
+      };
+
+      // Owner encrypts credentials with user's public key
+      const credentialsString = JSON.stringify(serviceCredentials);
+      const encryptedData = encryptWithPublicKey(
+        keyPairs[user1.address].publicKey,
+        credentialsString
+      );
+
+      // Owner stores the encrypted credentials on-chain
+      await sharedSubscriptionToken
+        .connect(owner)
+        .storeEncryptedCredentials(user1.address, serviceId1, encryptedData);
+
+      // User retrieves their encrypted credentials
+      const retrievedData = await sharedSubscriptionToken
+        .connect(user1)
+        .getEncryptedCredentials(serviceId1);
+
+      // Convert to Buffer
+      const encryptedBuffer = Buffer.from(retrievedData.slice(2), "hex");
+
+      // User decrypts with their private key
+      const decryptedData = decryptWithPrivateKey(
+        keyPairs[user1.address].privateKey,
+        encryptedBuffer
+      );
+
+      // Verify decrypted data matches original credentials
+      const decryptedCredentials = JSON.parse(decryptedData);
+      expect(decryptedCredentials.username).to.equal(
+        serviceCredentials.username
+      );
+      expect(decryptedCredentials.password).to.equal(
+        serviceCredentials.password
+      );
+    });
+
+    it("Should store different credentials for each user", async function () {
+      // All users register their public keys
+      for (const user of [user1, user2, user3]) {
+        await sharedSubscriptionToken
+          .connect(user)
+          .registerPublicKey(keyPairs[user.address].publicKey);
+      }
+
+      // Define custom profiles for each user
+      const profiles = {
+        [user1.address]: { username: "netflix_main", profile: "Profile 1" },
+        [user2.address]: { username: "netflix_main", profile: "Profile 2" },
+        [user3.address]: { username: "netflix_main", profile: "Profile 3" },
+      };
+
+      // Shared password
+      const sharedPassword = "AccountPassword123!";
+
+      // Owner stores customized credentials for each user
+      for (const user of [user1, user2, user3]) {
+        const userData = {
+          ...profiles[user.address],
+          password: sharedPassword,
+        };
+
+        const credentialsString = JSON.stringify(userData);
+        const encryptedData = encryptWithPublicKey(
+          keyPairs[user.address].publicKey,
+          credentialsString
+        );
+
+        await sharedSubscriptionToken
+          .connect(owner)
+          .storeEncryptedCredentials(user.address, serviceId1, encryptedData);
+      }
+
+      // Each user retrieves and decrypts their credentials
+      for (const user of [user1, user2, user3]) {
+        const retrievedData = await sharedSubscriptionToken
+          .connect(user)
+          .getEncryptedCredentials(serviceId1);
+
+        const encryptedBuffer = Buffer.from(retrievedData.slice(2), "hex");
+
+        const decryptedData = decryptWithPrivateKey(
+          keyPairs[user.address].privateKey,
+          encryptedBuffer
+        );
+
+        const decryptedCredentials = JSON.parse(decryptedData);
+
+        // Verify the profile-specific information is correct
+        expect(decryptedCredentials.username).to.equal(
+          profiles[user.address].username
+        );
+        expect(decryptedCredentials.profile).to.equal(
+          profiles[user.address].profile
+        );
+        expect(decryptedCredentials.password).to.equal(sharedPassword);
+      }
+    });
+
+    it("Should prevent accessing credentials after subscription expires", async function () {
+      // User registers public key
+      await sharedSubscriptionToken
+        .connect(user1)
+        .registerPublicKey(keyPairs[user1.address].publicKey);
+
+      // Owner stores credentials
+      const credentials = { username: "test_user", password: "test_password" };
+      const encryptedData = encryptWithPublicKey(
+        keyPairs[user1.address].publicKey,
+        JSON.stringify(credentials)
+      );
+
+      await sharedSubscriptionToken
+        .connect(owner)
+        .storeEncryptedCredentials(user1.address, serviceId1, encryptedData);
+
+      // Fast-forward time beyond subscription period
+      await hre.ethers.provider.send("evm_increaseTime", [60 * 60 * 24 * 31]); // 31 days
+      await hre.ethers.provider.send("evm_mine");
+
+      // Attempt to retrieve credentials (should fail)
+      await expect(
+        sharedSubscriptionToken
+          .connect(user1)
+          .getEncryptedCredentials(serviceId1)
+      ).to.be.revertedWith("Subscription has expired");
+    });
+
+    it("Should not allow owner to store credentials for user without public key", async function () {
+      // User subscribes but doesn't register public key
+
+      // Owner tries to store credentials
+      const dummyData = Buffer.from("test data");
+
+      await expect(
+        sharedSubscriptionToken
+          .connect(owner)
+          .storeEncryptedCredentials(user1.address, serviceId1, dummyData)
+      ).to.be.revertedWith("User has not registered a public key");
+    });
+
+    it("Should not allow non-owner to store credentials for others", async function () {
+      // User1 registers public key
+      await sharedSubscriptionToken
+        .connect(user1)
+        .registerPublicKey(keyPairs[user1.address].publicKey);
+
+      // User2 tries to store credentials for User1 (should fail)
+      const dummyData = Buffer.from("test data");
+
+      await expect(
+        sharedSubscriptionToken
+          .connect(user2)
+          .storeEncryptedCredentials(user1.address, serviceId1, dummyData)
+      ).to.be.revertedWith("Ownable: caller is not the owner");
+    });
   });
 
   //Jayden added
@@ -597,7 +749,6 @@ describe("SharedSubscriptionToken", function () {
   });
 
   // new tests for security
-
   describe("Security: Reentrancy", function () {
     let attackerContract;
 
@@ -639,25 +790,9 @@ describe("SharedSubscriptionToken", function () {
   });
 
   describe("Proposal Cooldown", function () {
-    let sharedSubscriptionToken, owner, user1, user2, user3;
-    const serviceId1 = 1;
-    const tokenPrice = hre.ethers.parseEther("0.01");
-
+    // FIX: Use the existing services instead of adding a new one
     beforeEach(async function () {
-      [owner, user1, user2, user3] = await hre.ethers.getSigners();
-
-      const SharedSubscriptionToken = await hre.ethers.getContractFactory(
-        "SharedSubscriptionToken",
-        owner
-      );
-      sharedSubscriptionToken = await SharedSubscriptionToken.deploy();
-      await sharedSubscriptionToken.waitForDeployment();
-
-      await sharedSubscriptionToken
-        .connect(owner)
-        .addService(serviceId1, "NFLX");
-
-      // All users buy tokens and subscribe
+      // All users buy tokens and subscribe - using the existing serviceId1
       for (let user of [user1, user2, user3]) {
         await sharedSubscriptionToken
           .connect(user)

@@ -24,8 +24,6 @@ contract SharedSubscriptionToken {
         bool active;
         uint256 expirationTime;
         address[] members; // Users who share this subscription
-        string encryptedUsername; // Base username for the account (encrypted)
-        string encryptedPassword; // Base password for the account (encrypted)
         mapping(address => bool) isMember; // Quick lookup for membership
         mapping(address => bytes) encryptedCredentials; // User-specific encrypted credentials
         //Jayden added
@@ -46,11 +44,15 @@ contract SharedSubscriptionToken {
     mapping(address => mapping(uint256 => UserSubscription)) public userSubscriptions; // user => serviceId => UserSubscription
     mapping(uint256 => uint256[]) public activeSubscriptionsByService; // serviceId => array of active accountIds
     
+    // New mapping for public keys
+    mapping(address => string) public userPublicKeys;
+    
     // Events
     event SubscriptionAccountCreated(uint256 serviceId, uint256 accountId);
     event UserAddedToSubscription(address user, uint256 serviceId, uint256 accountId);
     event SubscriptionUpdate(uint256 serviceId, uint256 accountId, uint256 numMembers, uint256 costPerMember);
     event CredentialsUpdated(address user, uint256 serviceId, uint256 accountId);
+    event PublicKeyRegistered(address user, string publicKey);
     
     constructor() {
         owner = msg.sender;
@@ -80,9 +82,6 @@ contract SharedSubscriptionToken {
         }
         _;
     }
-
-
-    
     
     function buyTokens(uint256 amount) external payable {
         require(msg.value >= amount * tokenPrice, "Insufficient payment");
@@ -110,7 +109,6 @@ contract SharedSubscriptionToken {
         }
         
         // Random selection from available accounts
-        // Rayn: Add additional entropy sources for randomisation
         uint256 randomIndex = uint256(keccak256(abi.encodePacked(
             block.timestamp, 
             msg.sender, 
@@ -167,43 +165,42 @@ contract SharedSubscriptionToken {
         
         emit UserAddedToSubscription(msg.sender, serviceId, accountId);
     }
-    
-    // Store encrypted credentials for a subscription (encrypted with user's public key)
+
+    // New function: Register user's public key
+    function registerPublicKey(string calldata publicKey) external {
+        require(bytes(publicKey).length > 0, "Public key cannot be empty");
+        userPublicKeys[msg.sender] = publicKey;
+        emit PublicKeyRegistered(msg.sender, publicKey);
+    }
+
+    // New function: Get user's public key
+    function getPublicKey(address user) external view returns (string memory) {
+        return userPublicKeys[user];
+    }
+
+    // Store encrypted credentials for a user (called by owner)
     function storeEncryptedCredentials(
+        address user,
         uint256 serviceId, 
         bytes calldata encryptedData
-    ) external checkSubscriptionActive(serviceId) {
-        UserSubscription storage userSub = userSubscriptions[msg.sender][serviceId];
-        require(userSub.exists, "Not subscribed to this service");
+    ) external onlyOwner {
+        UserSubscription storage userSub = userSubscriptions[user][serviceId];
+        require(userSub.exists, "User not subscribed to this service");
+        require(bytes(userPublicKeys[user]).length > 0, "User has not registered a public key");
         
         uint256 accountId = userSub.accountId;
         SubscriptionAccount storage account = subscriptionAccounts[serviceId][accountId];
+        require(account.isMember[user], "Not a member of this account");
         
         // Store encrypted credentials
-        account.encryptedCredentials[msg.sender] = encryptedData;
+        account.encryptedCredentials[user] = encryptedData;
         
-        emit CredentialsUpdated(msg.sender, serviceId, accountId);
-    }
-    
-    // Set base credentials for a subscription account (only owner can do this)
-    function setBaseCredentials(
-        uint256 serviceId, 
-        uint256 accountId, 
-        string calldata encryptedUsername, 
-        string calldata encryptedPassword
-    ) external onlyOwner {
-        require(subscriptionAccounts[serviceId][accountId].active, "Subscription account not active");
-        
-        SubscriptionAccount storage account = subscriptionAccounts[serviceId][accountId];
-        account.encryptedUsername = encryptedUsername;
-        account.encryptedPassword = encryptedPassword;
+        emit CredentialsUpdated(user, serviceId, accountId);
     }
     
     // Get encrypted credentials for a user
     function getEncryptedCredentials(uint256 serviceId) external view returns (bytes memory) {
-        // We'll need to manually check subscription expiration instead of using the modifier
-        // since modifiers with state changes can't be used with view functions
-        
+        // Manual check for subscription expiration
         UserSubscription storage userSub = userSubscriptions[msg.sender][serviceId];
         require(userSub.exists, "Not subscribed to this service");
         
@@ -215,29 +212,6 @@ contract SharedSubscriptionToken {
         
         return account.encryptedCredentials[msg.sender];
     }
-    
-    // Check all subscriptions and expire those that have passed their time
-    //function checkAndExpireSubscriptions() external {
-      //  for (uint256 serviceId = 1; serviceId <= 100; serviceId++) {
-        //    if (services[serviceId].exists) {
-        //        uint256[] memory activeAccounts = activeSubscriptionsByService[serviceId];
-      //          for (uint i = 0; i < activeAccounts.length; i++) {
-     //               uint256 accountId = activeAccounts[i];
-     //               SubscriptionAccount storage account = subscriptionAccounts[serviceId][accountId];
-                    
-     //               if (account.active && account.expirationTime < block.timestamp) {
-    //                    account.active = false;
-     //                   
-    //                    // Also mark all members' subscriptions as inactive
-    //                    for (uint j = 0; j < account.members.length; j++) {
-    //                        address member = account.members[j];
-    //                        userSubscriptions[member][serviceId].exists = false;
-    //                    }
-    //                }
-          //      }
-     //       }
-      //  }
-    //}
     
     // Renew a subscription account (extends expiration time)
     function renewSubscription(uint256 serviceId) external {
@@ -304,7 +278,6 @@ contract SharedSubscriptionToken {
         maxUsersPerSubscription = newMax;
     }
 
-
     // Rayn prevent reentrancy attack code
     bool private _locked;
 
@@ -345,7 +318,7 @@ contract SharedSubscriptionToken {
     // Fallback function to receive ETH
     receive() external payable {}
 
-    //Jayden's new code
+    //Jayden's code
     struct Proposal {
         address proposer;
         address userToKick;
@@ -355,7 +328,7 @@ contract SharedSubscriptionToken {
         mapping(address => bool) hasVoted;
     }
 
-    // New events
+    // Events
     event ProposalCreated(
         uint256 serviceId,
         uint256 accountId,
@@ -376,12 +349,12 @@ contract SharedSubscriptionToken {
         address kickedUser
     );
 
-    // New error
+    // Errors
     error VotingPeriodEnded();
     error AlreadyVoted();
     error NotMember();
 
-    // New functions
+    // Functions
     function proposeToKickUser(
         uint256 serviceId,
         uint256 accountId,
