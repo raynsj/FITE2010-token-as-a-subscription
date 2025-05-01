@@ -54,6 +54,39 @@ describe("SharedSubscriptionToken", function () {
     [owner, user1, user2, user3, user4, user5, user6] =
       await hre.ethers.getSigners();
 
+    // Deploy base contracts first (in a production environment, these would be separate deployments)
+    const ownableFactory = await hre.ethers.getContractFactory(
+      "Ownable",
+      owner
+    );
+    const reentrancyGuardFactory = await hre.ethers.getContractFactory(
+      "ReentrancyGuard",
+      owner
+    );
+
+    // Deploy derived contracts
+    const tokenBaseFactory = await hre.ethers.getContractFactory(
+      "TokenBase",
+      owner
+    );
+    const serviceManagerFactory = await hre.ethers.getContractFactory(
+      "ServiceManager",
+      owner
+    );
+    const subscriptionManagerFactory = await hre.ethers.getContractFactory(
+      "SubscriptionManager",
+      owner
+    );
+    const encryptionSystemFactory = await hre.ethers.getContractFactory(
+      "EncryptionSystem",
+      owner
+    );
+    const votingSystemFactory = await hre.ethers.getContractFactory(
+      "VotingSystem",
+      owner
+    );
+
+    // Deploy the main contract which inherits from all base contracts
     const SharedSubscriptionToken = await hre.ethers.getContractFactory(
       "SharedSubscriptionToken",
       owner
@@ -358,7 +391,8 @@ describe("SharedSubscriptionToken", function () {
     );
   });
 
-  // New test suite for public key encryption system
+  // Public Key Encryption System tests remain largely the same,
+  // as the EncryptionSystem contract maintains the same interface
   describe("Public Key Encryption System", function () {
     beforeEach(async function () {
       // Generate key pairs for test users
@@ -557,7 +591,7 @@ describe("SharedSubscriptionToken", function () {
     });
   });
 
-  //Jayden added
+  // Voting System tests remain largely the same
   describe("Voting System", function () {
     beforeEach(async function () {
       // Setup: Allow up to 5 users in a single subscription account
@@ -602,8 +636,8 @@ describe("SharedSubscriptionToken", function () {
       );
 
       // Verify the proposal details
-      expect(proposal.proposer).to.equal(user1.address);
-      expect(proposal.userToKick).to.equal(user5.address);
+      expect(proposal[0]).to.equal(user1.address); // proposer
+      expect(proposal[1]).to.equal(user5.address); // userToKick
     });
 
     it("Should execute successful kick proposal", async function () {
@@ -699,7 +733,7 @@ describe("SharedSubscriptionToken", function () {
       await expect(
         sharedSubscriptionToken
           .connect(user6)
-          .voteOnProposal(serviceId1, accountId, 0, true)
+          .voteOnProposal(serviceId1, accountId, 1, true)
       ).to.be.revertedWithCustomError(sharedSubscriptionToken, "NotMember");
     });
 
@@ -740,7 +774,7 @@ describe("SharedSubscriptionToken", function () {
       await expect(
         sharedSubscriptionToken
           .connect(user2)
-          .voteOnProposal(serviceId1, accountId, 0, true)
+          .voteOnProposal(serviceId1, accountId, 1, true)
       ).to.be.revertedWithCustomError(
         sharedSubscriptionToken,
         "VotingPeriodEnded"
@@ -748,12 +782,12 @@ describe("SharedSubscriptionToken", function () {
     });
   });
 
-  // new tests for security
+  // Security tests for reentrancy
   describe("Security: Reentrancy", function () {
     let attackerContract;
 
     beforeEach(async function () {
-      // Deploy the attacker contract
+      // You'll need to create a ReentrancyAttack contract that works with the new structure
       const ReentrancyAttack = await hre.ethers.getContractFactory(
         "ReentrancyAttack"
       );
@@ -790,7 +824,6 @@ describe("SharedSubscriptionToken", function () {
   });
 
   describe("Proposal Cooldown", function () {
-    // FIX: Use the existing services instead of adding a new one
     beforeEach(async function () {
       // All users buy tokens and subscribe - using the existing serviceId1
       for (let user of [user1, user2, user3]) {
@@ -829,6 +862,151 @@ describe("SharedSubscriptionToken", function () {
       await sharedSubscriptionToken
         .connect(user1)
         .proposeToKickUser(serviceId1, accountId, user3.address);
+    });
+  });
+
+  // Test new functionality added in the SharedSubscriptionToken main contract
+  describe("Main contract extended functionality", function () {
+    it("Should allow admin to toggle pause state", async function () {
+      // Check initial pause state
+      expect(await sharedSubscriptionToken.paused()).to.be.false;
+
+      // Toggle pause on
+      await sharedSubscriptionToken.connect(owner).togglePause();
+      expect(await sharedSubscriptionToken.paused()).to.be.true;
+
+      // Try to buy tokens while paused (should fail)
+      await expect(
+        sharedSubscriptionToken
+          .connect(user1)
+          .buyTokens(1, { value: tokenPrice })
+      ).to.be.revertedWith("Contract is paused");
+
+      // Toggle pause off
+      await sharedSubscriptionToken.connect(owner).togglePause();
+      expect(await sharedSubscriptionToken.paused()).to.be.false;
+
+      // Should be able to buy tokens now
+      await sharedSubscriptionToken
+        .connect(user1)
+        .buyTokens(1, { value: tokenPrice });
+    });
+
+    it("Should allow token transfers between users", async function () {
+      // User1 buys tokens
+      await sharedSubscriptionToken
+        .connect(user1)
+        .buyTokens(10, { value: tokenPrice * BigInt(10) });
+
+      const initialUser1Balance = await sharedSubscriptionToken.balanceOf(
+        user1.address
+      );
+      const initialUser2Balance = await sharedSubscriptionToken.balanceOf(
+        user2.address
+      );
+
+      // Transfer 5 tokens from user1 to user2
+      await sharedSubscriptionToken
+        .connect(user1)
+        .transferTokens(user2.address, 5);
+
+      // Check balances
+      const finalUser1Balance = await sharedSubscriptionToken.balanceOf(
+        user1.address
+      );
+      const finalUser2Balance = await sharedSubscriptionToken.balanceOf(
+        user2.address
+      );
+
+      expect(finalUser1Balance).to.equal(initialUser1Balance - BigInt(5));
+      expect(finalUser2Balance).to.equal(initialUser2Balance + BigInt(5));
+    });
+
+    it("Should allow users to cash out tokens", async function () {
+      // User1 buys tokens
+      await sharedSubscriptionToken
+        .connect(user1)
+        .buyTokens(10, { value: tokenPrice * BigInt(10) });
+
+      const initialUser1TokenBalance = await sharedSubscriptionToken.balanceOf(
+        user1.address
+      );
+      const initialUser1EthBalance = await hre.ethers.provider.getBalance(
+        user1.address
+      );
+
+      // Cash out 5 tokens
+      const tx = await sharedSubscriptionToken.connect(user1).cashOutTokens(5);
+      const receipt = await tx.wait();
+      const gasUsed = receipt.gasUsed * receipt.gasPrice;
+
+      // Expected refund is 70% of token price
+      const expectedRefund =
+        (tokenPrice * BigInt(5) * BigInt(70)) / BigInt(100);
+
+      // Check token balance decreased
+      const finalUser1TokenBalance = await sharedSubscriptionToken.balanceOf(
+        user1.address
+      );
+      expect(finalUser1TokenBalance).to.equal(
+        initialUser1TokenBalance - BigInt(5)
+      );
+
+      // Check ETH balance increased (accounting for gas costs)
+      const finalUser1EthBalance = await hre.ethers.provider.getBalance(
+        user1.address
+      );
+      expect(finalUser1EthBalance).to.be.closeTo(
+        initialUser1EthBalance + expectedRefund - gasUsed,
+        hre.ethers.parseEther("0.0001") // Allow small calculation differences
+      );
+    });
+
+    it("Should provide contract statistics", async function () {
+      // Setup: Multiple users subscribe to services
+      for (let i = 0; i < 3; i++) {
+        const user = [user1, user2, user3][i];
+        await sharedSubscriptionToken
+          .connect(user)
+          .buyTokens(1, { value: tokenPrice });
+        await sharedSubscriptionToken.connect(user).subscribe(serviceId1);
+      }
+
+      // Get contract statistics
+      const [totalServices, totalActiveSubscriptions, contractBalance] =
+        await sharedSubscriptionToken.getContractStatistics();
+
+      // We should have 2 services
+      expect(totalServices).to.equal(2);
+      // We should have 1 active subscription account for service 1
+      expect(totalActiveSubscriptions).to.be.at.least(1);
+      // Contract balance should be at least the 3 tokens worth of ETH
+      expect(contractBalance).to.be.at.least(tokenPrice * BigInt(3));
+    });
+
+    it("Should get user's active subscriptions", async function () {
+      // User1 subscribes to both services
+      await sharedSubscriptionToken
+        .connect(user1)
+        .buyTokens(2, { value: tokenPrice * BigInt(2) });
+      await sharedSubscriptionToken.connect(user1).subscribe(serviceId1);
+      await sharedSubscriptionToken.connect(user1).subscribe(serviceId2);
+
+      // Get user's active subscriptions
+      const [serviceIds, isActive] =
+        await sharedSubscriptionToken.getUserActiveSubscriptions(user1.address);
+
+      // Both subscriptions should be active
+      expect(serviceIds.length).to.equal(2);
+      expect(isActive.length).to.equal(2);
+
+      // Check the service IDs
+      expect(serviceIds).to.include(BigInt(serviceId1));
+      expect(serviceIds).to.include(BigInt(serviceId2));
+
+      // Check activation status (both should be true)
+      expect(isActive[0]).to.be.true;
+      expect(isActive[1]).to.be.true;
     });
   });
 });
