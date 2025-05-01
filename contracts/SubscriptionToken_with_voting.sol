@@ -166,14 +166,14 @@ contract SharedSubscriptionToken {
         emit UserAddedToSubscription(msg.sender, serviceId, accountId);
     }
 
-    // New function: Register user's public key
+    // Register user's public key
     function registerPublicKey(string calldata publicKey) external {
         require(bytes(publicKey).length > 0, "Public key cannot be empty");
         userPublicKeys[msg.sender] = publicKey;
         emit PublicKeyRegistered(msg.sender, publicKey);
     }
 
-    // New function: Get user's public key
+    // Get user's public key
     function getPublicKey(address user) external view returns (string memory) {
         return userPublicKeys[user];
     }
