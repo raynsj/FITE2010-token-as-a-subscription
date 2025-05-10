@@ -10,9 +10,8 @@ contract SharedSubscriptionToken {
     uint256 public tokenPrice = 0.01 ether;
     uint256 public subscriptionDuration = 30 days;
     uint256 public maxUsersPerSubscription = 5; // Maximum users per subscription account
+    address public votingContractAddress;
     
-    mapping(address => uint256) public lastProposalTime;
-
     struct ServiceInfo {
         bool exists;
         uint256 cost;
@@ -26,9 +25,6 @@ contract SharedSubscriptionToken {
         address[] members; // Users who share this subscription
         mapping(address => bool) isMember; // Quick lookup for membership
         mapping(address => bytes) encryptedCredentials; // User-specific encrypted credentials
-        //Jayden added
-        mapping(uint256 => Proposal) proposals; // proposalId => Proposal
-        uint256 proposalCount; // Total proposals for this account
     }
     
     struct UserSubscription {
@@ -53,6 +49,7 @@ contract SharedSubscriptionToken {
     event SubscriptionUpdate(uint256 serviceId, uint256 accountId, uint256 numMembers, uint256 costPerMember);
     event CredentialsUpdated(address user, uint256 serviceId, uint256 accountId);
     event PublicKeyRegistered(address user, string publicKey);
+    event UserKicked(uint256 serviceId, uint256 accountId, address kickedUser);
     
     constructor() {
         owner = msg.sender;
@@ -61,6 +58,11 @@ contract SharedSubscriptionToken {
     
     modifier onlyOwner() {
         require(msg.sender == owner, "Ownable: caller is not the owner");
+        _;
+    }
+
+    modifier onlyVotingContract() {
+        require(msg.sender == votingContractAddress, "Only voting contract can call this function");
         _;
     }
 
@@ -83,6 +85,10 @@ contract SharedSubscriptionToken {
         _;
     }
     
+    function setVotingContractAddress(address _votingContractAddress) external onlyOwner {
+        votingContractAddress = _votingContractAddress;
+    }
+
     function buyTokens(uint256 amount) external payable {
         require(msg.value >= amount * tokenPrice, "Insufficient payment");
         balanceOf[msg.sender] += amount;
@@ -290,7 +296,7 @@ contract SharedSubscriptionToken {
     }
     
     // Withdraw funds from contract and prevent reentrancy
-    function withdrawFunds() external onlyOwner nonReentrant{
+    function withdrawFunds() external onlyOwner nonReentrant {
         uint256 amount = address(this).balance;
         // Update state before external call
         uint256 contractBalance = amount;
@@ -315,160 +321,32 @@ contract SharedSubscriptionToken {
         return (userSub.exists, userSub.accountId);
     }
     
+    // Function to check if a user is a member of a subscription account
+    function isMemberOfAccount(address user, uint256 serviceId, uint256 accountId) external view returns (bool) {
+        return subscriptionAccounts[serviceId][accountId].isMember[user];
+    }
+    
+    // Remove a user from a subscription (only callable by voting contract)
+    function kickUser(uint256 serviceId, uint256 accountId, address userToKick) external onlyVotingContract {
+        SubscriptionAccount storage account = subscriptionAccounts[serviceId][accountId];
+        require(account.isMember[userToKick], "User not in this account");
+        
+        // Remove user from subscription members array
+        for (uint256 i = 0; i < account.members.length; i++) {
+            if (account.members[i] == userToKick) {
+                account.members[i] = account.members[account.members.length - 1];
+                account.members.pop();
+                break;
+            }
+        }
+        
+        account.isMember[userToKick] = false;
+        delete account.encryptedCredentials[userToKick];
+        delete userSubscriptions[userToKick][serviceId];
+        
+        emit UserKicked(serviceId, accountId, userToKick);
+    }
+    
     // Fallback function to receive ETH
     receive() external payable {}
-
-    //Jayden's code
-    struct Proposal {
-        address proposer;
-        address userToKick;
-        uint256 yesVotes;
-        uint256 noVotes;
-        uint256 endTime;
-        mapping(address => bool) hasVoted;
-    }
-
-    // Events
-    event ProposalCreated(
-        uint256 serviceId,
-        uint256 accountId,
-        uint256 proposalId,
-        address proposer,
-        address userToKick
-    );
-    event VoteCast(
-        uint256 serviceId,
-        uint256 accountId,
-        uint256 proposalId,
-        address voter,
-        bool vote
-    );
-    event UserKicked(
-        uint256 serviceId,
-        uint256 accountId,
-        address kickedUser
-    );
-
-    // Errors
-    error VotingPeriodEnded();
-    error AlreadyVoted();
-    error NotMember();
-
-    // Functions
-    function proposeToKickUser(
-        uint256 serviceId,
-        uint256 accountId,
-        address userToKick
-    ) external {
-        SubscriptionAccount storage account = subscriptionAccounts[serviceId][accountId];
-        require(account.isMember[msg.sender], "Not a member");
-        require(account.isMember[userToKick], "User not in this account");
-        require(userToKick != msg.sender, "Cannot propose yourself");
-
-        // Rate limiting: Ensure the user waits at least 12 hours between proposals
-        require(
-            block.timestamp > lastProposalTime[msg.sender] + 12 hours,
-            "Wait before proposing again"
-        );
-
-        lastProposalTime[msg.sender] = block.timestamp;
-        
-        uint256 proposalId = ++account.proposalCount;
-        Proposal storage proposal = account.proposals[proposalId];
-        
-        proposal.proposer = msg.sender;
-        proposal.userToKick = userToKick;
-        proposal.endTime = block.timestamp + 1 days;
-        
-        emit ProposalCreated(serviceId, accountId, proposalId, msg.sender, userToKick);
-    }
-
-    function voteOnProposal(
-        uint256 serviceId,
-        uint256 accountId,
-        uint256 proposalId,
-        bool vote
-    ) external {
-        SubscriptionAccount storage account = subscriptionAccounts[serviceId][accountId];
-        Proposal storage proposal = account.proposals[proposalId];
-        
-        if (!account.isMember[msg.sender]) revert NotMember();
-        if (block.timestamp > proposal.endTime) revert VotingPeriodEnded();
-        if (proposal.hasVoted[msg.sender]) revert AlreadyVoted();
-        if (msg.sender == proposal.userToKick) revert NotMember();
-
-        proposal.hasVoted[msg.sender] = true;
-        if (vote) {
-            proposal.yesVotes += 1;
-        } else {
-            proposal.noVotes += 1;
-        }
-        
-        emit VoteCast(serviceId, accountId, proposalId, msg.sender, vote);
-    }
-
-    function executeProposal(
-        uint256 serviceId,
-        uint256 accountId,
-        uint256 proposalId
-    ) external {
-        SubscriptionAccount storage account = subscriptionAccounts[serviceId][accountId];
-        Proposal storage proposal = account.proposals[proposalId];
-        
-        require(block.timestamp > proposal.endTime, "Voting ongoing");
-        require(account.isMember[proposal.userToKick], "Already kicked");
-
-        // SAFETY CHECK: ensure at least 2 members to avoid underflow
-        require(account.members.length >= 2, "Not enough members to execute proposal");
-
-        uint256 totalMembers = account.members.length - 1; // Exclude userToKick
-        uint256 requiredVotes = (totalMembers / 2) + 1;
-        
-        if (proposal.yesVotes >= requiredVotes) {
-            // Remove user from subscription
-            for (uint256 i = 0; i < account.members.length; i++) {
-                if (account.members[i] == proposal.userToKick) {
-                    account.members[i] = account.members[account.members.length - 1];
-                    account.members.pop();
-                    break;
-                }
-            }
-            
-            account.isMember[proposal.userToKick] = false;
-            delete account.encryptedCredentials[proposal.userToKick];
-            delete userSubscriptions[proposal.userToKick][serviceId];
-            
-            emit UserKicked(serviceId, accountId, proposal.userToKick);
-        }
-    }
-    function getProposalCount(uint256 serviceId, uint256 accountId) 
-        external 
-        view 
-        returns (uint256) 
-    {
-        return subscriptionAccounts[serviceId][accountId].proposalCount;
-    }
-
-    function getProposal(uint256 serviceId, uint256 accountId, uint256 proposalId)
-        external
-        view
-        returns (
-            address proposer,
-            address userToKick,
-            uint256 yesVotes,
-            uint256 noVotes,
-            uint256 endTime
-        )
-    {
-        SubscriptionAccount storage account = subscriptionAccounts[serviceId][accountId];
-        Proposal storage proposal = account.proposals[proposalId];
-
-        return (
-            proposal.proposer,
-            proposal.userToKick,
-            proposal.yesVotes,
-            proposal.noVotes,
-            proposal.endTime
-        );
-    }
 }
