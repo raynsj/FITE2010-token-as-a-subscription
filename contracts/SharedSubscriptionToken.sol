@@ -280,17 +280,17 @@ contract SharedSubscriptionToken {
      * @param serviceId ID of the service
      * @return Encrypted credentials bytes
      */
-    function getEncryptedCredentials(uint256 serviceId) external returns (bytes memory) {
-        // First, update subscription status if needed
-        _updateSubscriptionStatus(msg.sender, serviceId);
-        
-        // Now check if the subscription is active
+    function getEncryptedCredentials(uint256 serviceId) external view returns (bytes memory) {
+        // Check if the subscription is active
         UserSubscription storage userSub = userSubscriptions[msg.sender][serviceId];
         require(userSub.exists, "Not subscribed to this service");
         
         uint256 accountId = userSub.accountId;
         SubscriptionAccount storage account = subscriptionAccounts[serviceId][accountId];
-        require(account.active, "Subscription has expired");
+        
+        // Check expiration without modifying state
+        bool isActive = account.active && account.expirationTime >= block.timestamp;
+        require(isActive, "Subscription has expired");
         
         // Forward request to service provider
         return serviceProvider.getEncryptedCredentials(msg.sender, serviceId);
@@ -339,6 +339,16 @@ contract SharedSubscriptionToken {
         uint256 costPerMember = serviceCost / memberCount;
         
         emit SubscriptionUpdate(serviceId, accountId, memberCount, costPerMember);
+    }
+    
+    /**
+     * @dev Updates the status of a subscription
+     * Marks expired subscriptions as inactive
+     * @param user Address of the user
+     * @param serviceId ID of the service
+     */
+    function updateSubscriptionStatus(address user, uint256 serviceId) external {
+        _updateSubscriptionStatus(user, serviceId);
     }
     
     /**
