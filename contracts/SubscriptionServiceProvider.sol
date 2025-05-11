@@ -144,6 +144,15 @@ contract SubscriptionServiceProvider {
         require(success, "Transfer failed");
     }
     
+    /**
+     * @dev Manually registers a user as subscribed (for testing)
+     * Only callable by owner
+     */
+    function manuallyRegisterSubscriber(uint256 serviceId, address user) external onlyOwner {
+        if (!services[serviceId].exists) revert ServiceNotFound();
+        isSubscribed[serviceId][user] = true;
+    }
+    
     // ==================== TOKEN CONTRACT FUNCTIONS ====================
     
     /**
@@ -177,7 +186,12 @@ contract SubscriptionServiceProvider {
         bytes calldata encryptedData
     ) external onlyTokenContract {
         if (!services[serviceId].exists) revert ServiceNotFound();
-        if (!isSubscribed[serviceId][user]) revert NotSubscribed();
+        
+        // If the user is not subscribed, register them (this is needed because in our new architecture,
+        // all members of a shared account should be marked as subscribed)
+        if (!isSubscribed[serviceId][user]) {
+            isSubscribed[serviceId][user] = true;
+        }
         
         // Store encrypted credentials
         encryptedCredentials[serviceId][user] = encryptedData;
