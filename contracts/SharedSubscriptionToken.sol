@@ -2,11 +2,22 @@
 pragma solidity ^0.8.0;
 
 /**
+ * @dev Interface for interacting with the SubscriptionServiceProvider contract
+ */
+interface ISubscriptionServiceProvider {
+    function processPayment(uint256 serviceId, address user) external payable returns (bool);
+    function storeEncryptedCredentials(address user, uint256 serviceId, bytes calldata encryptedData) external;
+    function getEncryptedCredentials(address user, uint256 serviceId) external view returns (bytes memory);
+    function cancelSubscription(address user, uint256 serviceId) external;
+    function getServiceDetails(uint256 serviceId) external view returns (bool, uint256, string memory, string memory);
+    function checkSubscriptionStatus(uint256 serviceId, address user) external view returns (bool);
+}
+
+/**
  * @title SharedSubscriptionToken
  * @dev A contract that implements token-as-a-subscription functionality with shared accounts.
- * This contract manages subscription accounts, service information, and user membership.
- * Users can pool resources together to share subscription costs while maintaining
- * individual encrypted credentials for service access.
+ * This contract manages subscription accounts and user membership, while interacting
+ * with an external service provider contract that handles actual service credentials.
  */
 contract SharedSubscriptionToken {
     // Contract owner address
@@ -24,19 +35,11 @@ contract SharedSubscriptionToken {
     // Address of the associated voting contract that manages governance
     address public votingContractAddress;
     
-    /**
-     * @dev Information about a service offering
-     * @param exists Whether the service exists
-     * @param cost The full cost of the service (before sharing)
-     * @param symbol Service identifier/symbol (e.g., "NFLX" for Netflix)
-     * @param subscriptionCount Number of active subscription accounts for this service
-     */
-    struct ServiceInfo {
-        bool exists;
-        uint256 cost;
-        string symbol;
-        uint256 subscriptionCount;
-    }
+    // Address of the service provider contract
+    address public serviceProviderAddress;
+    
+    // Service provider interface
+    ISubscriptionServiceProvider public serviceProvider;
     
     /**
      * @dev Information about a shared subscription account
@@ -44,14 +47,14 @@ contract SharedSubscriptionToken {
      * @param expirationTime Timestamp when the subscription expires
      * @param members Array of addresses who are members of this subscription
      * @param isMember Mapping for quick lookup if an address is a member
-     * @param encryptedCredentials User-specific encrypted credentials for service access
+     * @param serviceId ID of the service this account is subscribed to
      */
     struct SubscriptionAccount {
         bool active;
         uint256 expirationTime;
         address[] members;
         mapping(address => bool) isMember;
-        mapping(address => bytes) encryptedCredentials;
+        uint256 serviceId;
     }
     
     /**
@@ -71,9 +74,6 @@ contract SharedSubscriptionToken {
     // Token balances for each address
     mapping(address => uint256) public balanceOf;
     
-    // Mapping of service ID to service information
-    mapping(uint256 => ServiceInfo) public services;
-    
     // Double mapping of service ID and account ID to subscription account info
     mapping(uint256 => mapping(uint256 => SubscriptionAccount)) public subscriptionAccounts;
     
@@ -82,6 +82,9 @@ contract SharedSubscriptionToken {
     
     // Mapping of service ID to array of active account IDs for that service
     mapping(uint256 => uint256[]) public activeSubscriptionsByService;
+    
+    // Mapping of service ID to subscription count
+    mapping(uint256 => uint256) public subscriptionCounts;
     
     // Mapping of user address to their public key for encryption
     mapping(address => string) public userPublicKeys;
@@ -134,28 +137,6 @@ contract SharedSubscriptionToken {
     }
 
     /**
-     * @dev Enforces subscription expiration checks
-     * Verifies that a user's subscription is active and not expired
-     * @param serviceId ID of the service to check
-     */
-    modifier checkSubscriptionActive(uint256 serviceId) {
-        if (userSubscriptions[msg.sender][serviceId].exists) {
-            uint256 accountId = userSubscriptions[msg.sender][serviceId].accountId;
-            SubscriptionAccount storage account = subscriptionAccounts[serviceId][accountId];
-            
-            // If expired, mark as inactive
-            if (account.active && account.expirationTime < block.timestamp) {
-                account.active = false;
-            }
-            
-            require(account.active, "Subscription has expired");
-        } else {
-            revert("Not subscribed to this service");
-        }
-        _;
-    }
-    
-    /**
      * @dev Prevents reentrancy attacks
      */
     modifier nonReentrant() {
@@ -176,27 +157,12 @@ contract SharedSubscriptionToken {
     }
     
     /**
-     * @dev Adds a new service to the platform
-     * @param serviceId Unique identifier for the service
-     * @param symbol Short identifier string for the service (e.g., "NFLX")
+     * @dev Sets the address of the service provider contract
+     * @param _serviceProviderAddress Address of the service provider contract
      */
-    function addService(uint256 serviceId, string calldata symbol) external onlyOwner {
-        require(!services[serviceId].exists, "Service already exists");
-        
-        services[serviceId].exists = true;
-        services[serviceId].cost = 10 ether; // Default cost
-        services[serviceId].symbol = symbol;
-        services[serviceId].subscriptionCount = 0;
-    }
-    
-    /**
-     * @dev Updates the cost of an existing service
-     * @param serviceId ID of the service to update
-     * @param newCost New cost for the service
-     */
-    function updateServiceCost(uint256 serviceId, uint256 newCost) external onlyOwner {
-        require(services[serviceId].exists, "Service does not exist");
-        services[serviceId].cost = newCost;
+    function setServiceProviderAddress(address _serviceProviderAddress) external onlyOwner {
+        serviceProviderAddress = _serviceProviderAddress;
+        serviceProvider = ISubscriptionServiceProvider(_serviceProviderAddress);
     }
     
     /**
@@ -224,7 +190,6 @@ contract SharedSubscriptionToken {
     
     /**
      * @dev Stores encrypted credentials for a user
-     * Only callable by the contract owner
      * @param user Address of the user
      * @param serviceId ID of the service
      * @param encryptedData Encrypted credentials data
@@ -242,8 +207,8 @@ contract SharedSubscriptionToken {
         SubscriptionAccount storage account = subscriptionAccounts[serviceId][accountId];
         require(account.isMember[user], "Not a member of this account");
         
-        // Store encrypted credentials
-        account.encryptedCredentials[user] = encryptedData;
+        // Send credentials to service provider
+        serviceProvider.storeEncryptedCredentials(user, serviceId, encryptedData);
         
         emit CredentialsUpdated(user, serviceId, accountId);
     }
@@ -264,8 +229,10 @@ contract SharedSubscriptionToken {
      * User will be assigned to an existing subscription account with space or a new one will be created
      * @param serviceId ID of the service to subscribe to
      */
-    function subscribe(uint256 serviceId) external {
-        require(services[serviceId].exists, "Service does not exist");
+    function subscribe(uint256 serviceId) external payable {
+        // Verify the service exists by checking with service provider
+        (bool exists, uint256 serviceCost, , ) = serviceProvider.getServiceDetails(serviceId);
+        require(exists, "Service does not exist");
         require(balanceOf[msg.sender] >= 1, "Insufficient tokens");
         require(!userSubscriptions[msg.sender][serviceId].exists, "Already subscribed to this service");
         
@@ -278,6 +245,10 @@ contract SharedSubscriptionToken {
         // If no account available, create a new one
         if (accountId == 0) {
             accountId = _createSubscriptionAccount(serviceId);
+            
+            // Process payment to service provider for new subscription account
+            bool success = serviceProvider.processPayment{value: serviceCost}(serviceId, msg.sender);
+            require(success, "Payment to service provider failed");
         }
         
         // Add user to subscription account
@@ -309,31 +280,40 @@ contract SharedSubscriptionToken {
      * @param serviceId ID of the service
      * @return Encrypted credentials bytes
      */
-    function getEncryptedCredentials(uint256 serviceId) external view returns (bytes memory) {
-        // Manual check for subscription expiration
+    function getEncryptedCredentials(uint256 serviceId) external returns (bytes memory) {
+        // First, update subscription status if needed
+        _updateSubscriptionStatus(msg.sender, serviceId);
+        
+        // Now check if the subscription is active
         UserSubscription storage userSub = userSubscriptions[msg.sender][serviceId];
         require(userSub.exists, "Not subscribed to this service");
         
         uint256 accountId = userSub.accountId;
         SubscriptionAccount storage account = subscriptionAccounts[serviceId][accountId];
+        require(account.active, "Subscription has expired");
         
-        // Manual check for expiration
-        require(account.active && account.expirationTime >= block.timestamp, "Subscription has expired");
-        
-        return account.encryptedCredentials[msg.sender];
+        // Forward request to service provider
+        return serviceProvider.getEncryptedCredentials(msg.sender, serviceId);
     }
     
     /**
      * @dev Renews a subscription by extending its expiration time
      * @param serviceId ID of the service to renew
      */
-    function renewSubscription(uint256 serviceId) external {
+    function renewSubscription(uint256 serviceId) external payable {
         UserSubscription storage userSub = userSubscriptions[msg.sender][serviceId];
         require(userSub.exists, "Not subscribed to this service");
         require(balanceOf[msg.sender] >= 1, "Insufficient tokens");
         
         uint256 accountId = userSub.accountId;
         SubscriptionAccount storage account = subscriptionAccounts[serviceId][accountId];
+        
+        // Get service cost
+        (, uint256 serviceCost, , ) = serviceProvider.getServiceDetails(serviceId);
+        
+        // Process payment to service provider
+        bool success = serviceProvider.processPayment{value: serviceCost}(serviceId, msg.sender);
+        require(success, "Payment to service provider failed");
         
         // Deduct token and extend expiration
         balanceOf[msg.sender] -= 1;
@@ -347,16 +327,36 @@ contract SharedSubscriptionToken {
      * @param accountId ID of the subscription account
      */
     function calculateCostPerMember(uint256 serviceId, uint256 accountId) external {
-        require(services[serviceId].exists, "Service does not exist");
+        // Check with service provider that the service exists
+        (bool exists, uint256 serviceCost, , ) = serviceProvider.getServiceDetails(serviceId);
+        require(exists, "Service does not exist");
         require(subscriptionAccounts[serviceId][accountId].active, "Subscription account not active");
         
         SubscriptionAccount storage account = subscriptionAccounts[serviceId][accountId];
         uint256 memberCount = account.members.length;
         
         require(memberCount > 0, "No members in subscription");
-        uint256 costPerMember = services[serviceId].cost / memberCount;
+        uint256 costPerMember = serviceCost / memberCount;
         
         emit SubscriptionUpdate(serviceId, accountId, memberCount, costPerMember);
+    }
+    
+    /**
+     * @dev Internal function to update the status of a subscription
+     * Marks expired subscriptions as inactive
+     * @param user Address of the user
+     * @param serviceId ID of the service
+     */
+    function _updateSubscriptionStatus(address user, uint256 serviceId) internal {
+        if (userSubscriptions[user][serviceId].exists) {
+            uint256 accountId = userSubscriptions[user][serviceId].accountId;
+            SubscriptionAccount storage account = subscriptionAccounts[serviceId][accountId];
+            
+            // If expired, mark as inactive
+            if (account.active && account.expirationTime < block.timestamp) {
+                account.active = false;
+            }
+        }
     }
     
     // ==================== VOTING CONTRACT FUNCTIONS ====================
@@ -382,8 +382,10 @@ contract SharedSubscriptionToken {
         }
         
         account.isMember[userToKick] = false;
-        delete account.encryptedCredentials[userToKick];
         delete userSubscriptions[userToKick][serviceId];
+        
+        // Notify service provider to cancel this user's access
+        serviceProvider.cancelSubscription(userToKick, serviceId);
         
         emit UserKicked(serviceId, accountId, userToKick);
     }
@@ -421,21 +423,14 @@ contract SharedSubscriptionToken {
         
         uint256 accountId = userSub.accountId;
         SubscriptionAccount storage account = subscriptionAccounts[serviceId][accountId];
-        return account.active && account.expirationTime >= block.timestamp;
-    }
-    
-    /**
-     * @dev Gets details about a service
-     * @param serviceId ID of the service
-     * @return exists Whether the service exists
-     * @return cost Cost of the service
-     * @return symbol Symbol/identifier of the service
-     * @return subscriptionCount Number of subscription accounts for this service
-     */
-    function getServiceDetails(uint256 serviceId) external view 
-        returns (bool exists, uint256 cost, string memory symbol, uint256 subscriptionCount) {
-        ServiceInfo storage service = services[serviceId];
-        return (service.exists, service.cost, service.symbol, service.subscriptionCount);
+        
+        // Check expiration without modifying state
+        bool isActive = account.active && account.expirationTime >= block.timestamp;
+        
+        // Also check with service provider
+        bool providerStatus = serviceProvider.checkSubscriptionStatus(serviceId, user);
+        
+        return isActive && providerStatus;
     }
     
     /**
@@ -507,13 +502,14 @@ contract SharedSubscriptionToken {
      * @return ID of the new account
      */
     function _createSubscriptionAccount(uint256 serviceId) internal returns (uint256) {
-        uint256 accountId = services[serviceId].subscriptionCount + 1;
-        services[serviceId].subscriptionCount = accountId;
+        uint256 accountId = subscriptionCounts[serviceId] + 1;
+        subscriptionCounts[serviceId] = accountId;
         
         // Initialize the subscription account in storage
         SubscriptionAccount storage account = subscriptionAccounts[serviceId][accountId];
         account.active = true;
         account.expirationTime = block.timestamp + subscriptionDuration;
+        account.serviceId = serviceId;
         
         // Add to active accounts
         activeSubscriptionsByService[serviceId].push(accountId);
