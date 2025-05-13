@@ -104,8 +104,25 @@ function buyTokens(uint256 amount) external payable {
 
 ### 1. Install Dependencies
 
+# 1. Clone this repository
+
 ```bash
-npm install --save-dev hardhat @nomicfoundation/hardhat-toolbox chai
+git clone <repository_url>
+cd FITE2010-token-as-a-subscription
+```
+
+# 2. Install packages
+
+```bash
+npm install --save-dev hardhat@2.22.19 @nomicfoundation/hardhat-chai-matchers@2.0.8 chai@4.5.0 @nomicfoundation/hardhat-ethers@3.0.8 ethers@6.13.5 @openzeppelin/contracts@4.7.3
+```
+
+# 3. Compile and test contracts
+
+```bash
+npx hardhat compile
+
+npx hardhat test
 ```
 
 
