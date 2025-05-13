@@ -102,12 +102,11 @@ function buyTokens(uint256 amount) external payable {
 
 ## Project Setup
 
-### 1. Install Dependencies
-
 # 1. Clone this repository
 
 ```bash
 git clone <repository_url>
+
 cd FITE2010-token-as-a-subscription
 ```
 
@@ -125,47 +124,59 @@ npx hardhat compile
 npx hardhat test
 ```
 
-
-### 2. Test Execution
-
-```bash
-npx hardhat test test/test.js --network hardhat --verbose
-```
-
 **Expected Test Coverage:**
 
 ```
-SharedSubscriptionToken
-  ✓ Token purchases (3s)
-  ✓ Group formation (5s)
-  ✓ Credential encryption/decryption (7s)
+  SharedSubscriptionToken
+Initial token balance: 0n
+Final token balance: 5n
+    ✔ Should allow users to buy tokens
+Subscription active status: true
+    ✔ Should allow users to subscribe to a service
+    ✔ Should create new subscription account when first user subscribes
+    ✔ Should add users to existing subscription accounts when space available
+    ✔ Should create new subscription account when existing ones are full
+Original service cost: 10000000000000000000
+Cost per member: 3333333333333333333
+Cost per member * 3: 9999999999999999999
+    ✔ Should calculate cost per member correctly
+Initial subscription status: true
+Final subscription status: false
+    ✔ Should expire subscriptions after the designated time
+    ✔ Should allow users to renew their subscriptions
+Initial contract balance: 100000000000000000n
+    ✔ Should allow admin to withdraw funds
+    Public Key Encryption System
+      ✔ Should allow users to register public keys
+      ✔ Should allow owner to store encrypted credentials for users
+      ✔ Should store different credentials for each user
+      ✔ Should prevent accessing credentials after subscription expires
+      ✔ Should not allow owner to store credentials for user without public key
+      ✔ Should not allow non-owner to store credentials for others
+    Voting System
+      ✔ Should allow creating a proposal to kick a user
+      ✔ Should execute successful kick proposal
+      ✔ Should prevent double voting
+      ✔ Should not allow a non-member to propose or vote
+      ✔ Should not allow a user to propose themselves for removal
+      ✔ Should not allow voting after the voting period has ended
+    SubscriptionServiceProvider
+      ✔ Should process payments correctly
+      ✔ Should allow service provider to withdraw funds
+      ✔ Should allow updating service costs
+      ✔ Should allow setting a different payment receiver
+      ✔ Should handle API credentials management (100ms)
+    Security: Reentrancy
+Attack count (reentrant calls): 0n
+Stolen tokens: 1n
+      ✔ Should prevent reentrancy on buyTokens
+    Contract Integration
+      ✔ Should only allow voting contract to kick users
+      ✔ Should ensure service provider only accepts calls from token contract
 
-SubscriptionVoting
-  ✓ Proposal creation (2s)
-  ✓ Vote execution (4s)
 
-Security
-  ✓ Blocks reentrancy attacks (6s)
-  ✓ Prevents unauthorized access (3s)
+  29 passing (2s)
 ```
-
-
-## Technical Highlights
-
-### 1. Gas Optimization Strategies
-
-- Mapping-based membership checks (O(1) complexity)
-- Batched credential updates
-- Storage slot reuse for expired subscriptions
-
-
-### 2. Testing Matrix
-
-| Test Type | Coverage | Example Cases |
-| :-- | :-- | :-- |
-| Unit | 85% | Token minting, voting thresholds |
-| Integration | 95% | Cross-contract payments, group formation |
-| Security | 100% | Reentrancy, overflow/underflow |
 
 ### 3. Cryptographic Implementation
 
