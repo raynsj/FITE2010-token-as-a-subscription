@@ -25,7 +25,7 @@ A blockchain-based system for managing shared subscription services with tokeniz
 
 ## Key Functionality
 
-# 1. Tokenized Access System
+### 1. Tokenized Access System
 
 **Flow:**
 
@@ -33,13 +33,13 @@ A blockchain-based system for managing shared subscription services with tokeniz
 2. Spend 1 token to join/create subscription groups via `subscribe()`
 3. Groups auto-renew through pooled ETH payments
 
-# 2. Credential Management
+### 2. Credential Management
 
 - RSA public key registration (`registerPublicKey()`)
 - Owner-stored encrypted credentials using user's public key
 - On-demand decryption through `getEncryptedCredentials()`
 
-# 3. Governance Mechanism
+### 3. Governance Mechanism
 
 **Voting Process:**
 
@@ -66,7 +66,7 @@ A blockchain-based system for managing shared subscription services with tokeniz
 
 ## Security Architecture
 
-# 1. Reentrancy Protection
+### 1. Reentrancy Protection
 
 Set a flag to prevent malicious contracts from reentering during external payments
 
@@ -82,7 +82,7 @@ modifier nonReentrant() {
 function withdrawFunds() external onlyOwner nonReentrant {...}
 ```
 
-# Attack Simulation
+### Attack Simulation
 
 The `ReentrancyAttack` contract demonstrates:
 
