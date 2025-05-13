@@ -22,15 +22,6 @@ A blockchain-based system for managing shared subscription services with tokeniz
 1. Users buy tokens at 0.01 ETH/token through `buyTokens()`
 2. Spend 1 token to join/create subscription groups via `subscribe()`
 3. Groups auto-renew through pooled ETH payments
-```solidity
-function subscribe(uint256 serviceId) external payable {
-    require(balanceOf[msg.sender] >= 1, "Insufficient tokens");
-    balanceOf[msg.sender] -= 1;
-    _assignToGroup(serviceId); 
-    emit SubscriptionCreated(msg.sender, serviceId);
-}
-```
-
 
 ### 2. Credential Management
 
@@ -38,28 +29,27 @@ function subscribe(uint256 serviceId) external payable {
 - Owner-stored encrypted credentials using user's public key
 - On-demand decryption through `getEncryptedCredentials()`
 
-**Encryption Process:**
-
-```javascript
-const encrypted = crypto.publicEncrypt(publicKey, Buffer.from(credentials));
-await contract.storeEncryptedCredentials(user, serviceId, encrypted);
-```
-
-
 ### 3. Governance Mechanism
 
 **Voting Process:**
 
 1. Members propose removals via `proposeToKickUser()`
-2. 24-hour voting period with majority threshold
-3. Automated execution through `executeProposal()`
+2. Checking protocols is done
+3. Rate limiting of proposals (12 hour default)
+4. Allow users to vote
+5. Automated execution through `executeProposal()`
 ```solidity
-struct Proposal {
-    address proposer;
-    address userToKick;
-    uint256 yesVotes;
-    uint256 endTime;
-    mapping(address => bool) hasVoted;
+ // Check if proposal passed
+        if (proposal.yesVotes >= requiredVotes) {
+            // Verify user is still a member before kicking (they might have left already)
+            if (subscriptionToken.isMemberOfAccount(proposal.userToKick, proposal.serviceId, proposal.accountId)) {
+                // Call the main contract to remove the user
+                subscriptionToken.kickUser(proposal.serviceId, proposal.accountId, proposal.userToKick);
+                successful = true;
+            }
+        }
+        
+        emit ProposalExecuted(proposalId, proposal.serviceId, proposal.accountId, proposal.userToKick, successful);
 }
 ```
 
@@ -67,6 +57,8 @@ struct Proposal {
 ## Security Architecture
 
 ### 1. Reentrancy Protection
+
+Set a flag to prevent malicious contracts from reentering during external payments
 
 ```solidity
 modifier nonReentrant() {
@@ -80,23 +72,20 @@ modifier nonReentrant() {
 function withdrawFunds() external onlyOwner nonReentrant {...}
 ```
 
+# Attack Simulation
 
-### 2. Access Control Layers
+The `ReentrancyAttack` contract demonstrates:
 
-| Role | Privileges | Enforcement Method |
-| :-- | :-- | :-- |
-| Owner | Contract configuration | `onlyOwner` modifier |
-| Voting Contract | Member removal | `onlyVotingContract` modifier |
-| Service Provider | Credential updates | Whitelisted address checks |
+1. Recursive call attempts during token purchases
+2. ETH balance manipulation checks
+3. Attack pattern logging through events
 
-### 3. Input Validation
+**Prevention Evidence:**
 
-```solidity
-function buyTokens(uint256 amount) external payable {
-    require(msg.value >= amount * tokenPrice, "Insufficient ETH");
-    require(amount > 0, "Invalid token amount");
-    _mintTokens(msg.sender, amount);
-}
+```text
+Test Results:
+  ✓ Blocks recursive buyTokens calls (1934ms)
+  ✓ Limits stolen tokens to initial transaction (2s)
 ```
 
 
@@ -178,15 +167,6 @@ Stolen tokens: 1n
   29 passing (2s)
 ```
 
-### 3. Cryptographic Implementation
-
-```javascript
-// Test implementation
-const { publicKey, privateKey } = generateKeyPair();
-const encrypted = encryptWithPublicKey(publicKey, 'credentials');
-const decrypted = decryptWithPrivateKey(privateKey, encrypted);
-```
-
 
 ## Attack Simulation
 
@@ -206,7 +186,6 @@ Test Results:
 
 This implementation provides a robust framework for managing shared digital subscriptions while maintaining strong security guarantees and transparent governance.
 
-<div style="text-align: center">⁂</div>
 
 
 
