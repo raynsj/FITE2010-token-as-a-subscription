@@ -4,6 +4,16 @@
 
 A blockchain-based system for managing shared subscription services with tokenized access and decentralized governance.
 
+
+## Table of Contents
+
+- [Core Components](#core-components)
+- [Key Functionality](#key-functionality)
+- [Security Architecture](#security-architecture)
+- [Project Setup](#project-setup)
+- [Expected Test Coverage](#expected-test-coverage)
+
+
 ## Core Components
 
 | Contract | Purpose | Key Security Features |
@@ -15,7 +25,7 @@ A blockchain-based system for managing shared subscription services with tokeniz
 
 ## Key Functionality
 
-### 1. Tokenized Access System
+# 1. Tokenized Access System
 
 **Flow:**
 
@@ -23,13 +33,13 @@ A blockchain-based system for managing shared subscription services with tokeniz
 2. Spend 1 token to join/create subscription groups via `subscribe()`
 3. Groups auto-renew through pooled ETH payments
 
-### 2. Credential Management
+# 2. Credential Management
 
 - RSA public key registration (`registerPublicKey()`)
 - Owner-stored encrypted credentials using user's public key
 - On-demand decryption through `getEncryptedCredentials()`
 
-### 3. Governance Mechanism
+# 3. Governance Mechanism
 
 **Voting Process:**
 
@@ -56,7 +66,7 @@ A blockchain-based system for managing shared subscription services with tokeniz
 
 ## Security Architecture
 
-### 1. Reentrancy Protection
+# 1. Reentrancy Protection
 
 Set a flag to prevent malicious contracts from reentering during external payments
 
@@ -91,7 +101,7 @@ Test Results:
 
 ## Project Setup
 
-# 1. Clone this repository
+1. Clone this repository
 
 ```bash
 git clone <repository_url>
@@ -99,13 +109,13 @@ git clone <repository_url>
 cd FITE2010-token-as-a-subscription
 ```
 
-# 2. Install packages
+2. Install packages
 
 ```bash
 npm install --save-dev hardhat@2.22.19 @nomicfoundation/hardhat-chai-matchers@2.0.8 chai@4.5.0 @nomicfoundation/hardhat-ethers@3.0.8 ethers@6.13.5 @openzeppelin/contracts@4.7.3
 ```
 
-# 3. Compile and test contracts
+3. Compile and test contracts
 
 ```bash
 npx hardhat compile
@@ -167,22 +177,6 @@ Stolen tokens: 1n
   29 passing (2s)
 ```
 
-
-## Attack Simulation
-
-The `ReentrancyAttack` contract demonstrates:
-
-1. Recursive call attempts during token purchases
-2. ETH balance manipulation checks
-3. Attack pattern logging through events
-
-**Prevention Evidence:**
-
-```text
-Test Results:
-  ✓ Blocks recursive buyTokens calls (1934ms)
-  ✓ Limits stolen tokens to initial transaction (2s)
-```
 
 This implementation provides a robust framework for managing shared digital subscriptions while maintaining strong security guarantees and transparent governance.
 
