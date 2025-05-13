@@ -127,7 +127,7 @@ This contract ensures that only legitimate, paid users can access subscription c
 1. Clone this repository
 
 ```bash
-git clone <repository_url>
+git clone https://github.com/raynsj/FITE2010-token-as-a-subscription.git
 
 cd FITE2010-token-as-a-subscription
 ```
