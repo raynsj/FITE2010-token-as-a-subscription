@@ -5,7 +5,7 @@
 
 ---
 
-## 📚 Table of Contents
+## Table of Contents
 
 - [Core Components](#core-components)
 - [Key Functionality](#key-functionality)
@@ -16,7 +16,7 @@
 
 ---
 
-## 🧩 Core Components
+## Core Components
 
 | **Contract** | **Purpose** | **Key Security Features** |
 | :-- | :-- | :-- |
@@ -28,7 +28,7 @@
 
 ---
 
-## ⚙️ Key Functionality
+## Key Functionality
 
 ### 1. **Tokenized Access System**
 
@@ -74,7 +74,7 @@ emit ProposalExecuted(proposalId, proposal.serviceId, proposal.accountId, propos
 
 ---
 
-## 🛡️ Security Architecture
+## Security Architecture
 
 ### 1. **Reentrancy Protection**
 
@@ -117,7 +117,7 @@ Stolen tokens: 1n
 
 ---
 
-## 🏢 Subscription Service Provider
+## Subscription Service Provider
 
 The `SubscriptionServiceProvider` contract acts as the service layer, simulating real-world subscription services. It manages available services, processes payments, and securely stores encrypted credentials for users.
 
@@ -134,7 +134,7 @@ The `SubscriptionServiceProvider` contract acts as the service layer, simulating
 
 ---
 
-## 🚀 Project Setup
+## Project Setup
 
 **1. Clone this repository**
 
@@ -160,7 +160,7 @@ npx hardhat test
 
 ---
 
-## ✅ Expected Test Coverage
+## Expected Test Coverage
 
 ```
   SharedSubscriptionToken
