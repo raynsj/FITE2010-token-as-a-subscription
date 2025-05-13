@@ -12,6 +12,7 @@ A blockchain-based system for managing shared subscription services with tokeniz
 - [Security Architecture](#security-architecture)
 - [Project Setup](#project-setup)
 - [Expected Test Coverage](#expected-test-coverage)
+- [Subscription Service Provider](#subscription-service-provider)
 
 
 ## Core Components
@@ -22,6 +23,7 @@ A blockchain-based system for managing shared subscription services with tokeniz
 | `SubscriptionServiceProvider` | Handles payment processing and encrypted credential storage | Input validation, payment receiver isolation, owner restrictions |
 | `SubscriptionVoting` | Governs member removal through proposals and voting | Vote cooldowns, majority verification, execution timeouts |
 | `ReentrancyAttack` | Demonstrates security through simulated attack vectors | Attack pattern logging, emergency withdrawal |
+
 
 ## Key Functionality
 
@@ -38,6 +40,7 @@ A blockchain-based system for managing shared subscription services with tokeniz
 - RSA public key registration (`registerPublicKey()`)
 - Owner-stored encrypted credentials using user's public key
 - On-demand decryption through `getEncryptedCredentials()`
+
 
 ### 3. Governance Mechanism
 
@@ -82,6 +85,7 @@ modifier nonReentrant() {
 function withdrawFunds() external onlyOwner nonReentrant {...}
 ```
 
+
 ### Attack Simulation
 
 The `ReentrancyAttack` contract demonstrates:
@@ -97,6 +101,22 @@ Test Results:
   ✓ Blocks recursive buyTokens calls (1934ms)
   ✓ Limits stolen tokens to initial transaction (2s)
 ```
+
+
+## Subscription Service Provider
+
+The `SubscriptionServiceProvider` contract acts as the service layer, simulating real-world subscription services. It manages available services, processes payments, and securely stores encrypted credentials for users.
+
+**Key Features:**
+
+- **Service Management:** The owner can add, update, and manage services with unique IDs, symbols (like "NFLX"), costs, and mock API endpoints.
+- **Payment Processing:** Only the trusted token contract can process payments, ensuring users are marked as subscribed only after successful payment.
+- **Credential Security:** Encrypted credentials are stored and managed per user and service, accessible only through the token contract.
+- **Subscription Tracking:** Tracks which users are subscribed to which services.
+- **Access Control:** Critical functions are restricted to the contract owner or the authorized token contract, protecting against unauthorized actions.
+- **Funds Handling:** The owner can withdraw funds to a designated payment receiver address.
+
+This contract ensures that only legitimate, paid users can access subscription credentials, and it integrates seamlessly with the rest of the system for secure and efficient subscription management.
 
 
 ## Project Setup
