@@ -1,11 +1,11 @@
 
+# Decentralized Shared Subscription (token-as-a-subscription)
 
-# Decentralized Shared Subscription Protocol
+*A blockchain-based system for managing shared subscription services with tokenized access and decentralized governance.*
 
-A blockchain-based system for managing shared subscription services with tokenized access and decentralized governance.
+---
 
-
-## Table of Contents
+## 📚 Table of Contents
 
 - [Core Components](#core-components)
 - [Key Functionality](#key-functionality)
@@ -14,10 +14,11 @@ A blockchain-based system for managing shared subscription services with tokeniz
 - [Expected Test Coverage](#expected-test-coverage)
 - [Subscription Service Provider](#subscription-service-provider)
 
+---
 
-## Core Components
+## 🧩 Core Components
 
-| Contract | Purpose | Key Security Features |
+| **Contract** | **Purpose** | **Key Security Features** |
 | :-- | :-- | :-- |
 | `SharedSubscriptionToken` | Manages token purchases, group memberships, and credential encryption | Reentrancy guards, role-based access control, expiration checks |
 | `SubscriptionServiceProvider` | Handles payment processing and encrypted credential storage | Input validation, payment receiver isolation, owner restrictions |
@@ -25,24 +26,29 @@ A blockchain-based system for managing shared subscription services with tokeniz
 | `ReentrancyAttack` | Demonstrates security through simulated attack vectors | Attack pattern logging, emergency withdrawal |
 
 
-## Key Functionality
+---
 
-### 1. Tokenized Access System
+## ⚙️ Key Functionality
+
+### 1. **Tokenized Access System**
 
 **Flow:**
 
-1. Users buy tokens at 0.01 ETH/token through `buyTokens()`
-2. Spend 1 token to join/create subscription groups via `subscribe()`
-3. Groups auto-renew through pooled ETH payments
+- Users buy tokens at 0.01 ETH/token through `buyTokens()`
+- Spend 1 token to join/create subscription groups via `subscribe()`
+- Groups auto-renew through pooled ETH payments
 
-### 2. Credential Management
+---
+
+### 2. **Credential Management**
 
 - RSA public key registration (`registerPublicKey()`)
 - Owner-stored encrypted credentials using user's public key
 - On-demand decryption through `getEncryptedCredentials()`
 
+---
 
-### 3. Governance Mechanism
+### 3. **Governance Mechanism**
 
 **Voting Process:**
 
@@ -52,26 +58,27 @@ A blockchain-based system for managing shared subscription services with tokeniz
 4. Allow users to vote
 5. Automated execution through `executeProposal()`
 ```solidity
- // Check if proposal passed
-        if (proposal.yesVotes >= requiredVotes) {
-            // Verify user is still a member before kicking (they might have left already)
-            if (subscriptionToken.isMemberOfAccount(proposal.userToKick, proposal.serviceId, proposal.accountId)) {
-                // Call the main contract to remove the user
-                subscriptionToken.kickUser(proposal.serviceId, proposal.accountId, proposal.userToKick);
-                successful = true;
-            }
-        }
-        
-        emit ProposalExecuted(proposalId, proposal.serviceId, proposal.accountId, proposal.userToKick, successful);
+// Check if proposal passed
+if (proposal.yesVotes >= requiredVotes) {
+    // Verify user is still a member before kicking (they might have left already)
+    if (subscriptionToken.isMemberOfAccount(proposal.userToKick, proposal.serviceId, proposal.accountId)) {
+        // Call the main contract to remove the user
+        subscriptionToken.kickUser(proposal.serviceId, proposal.accountId, proposal.userToKick);
+        successful = true;
+    }
+}
+emit ProposalExecuted(proposalId, proposal.serviceId, proposal.accountId, proposal.userToKick, successful);
 }
 ```
 
 
-## Security Architecture
+---
 
-### 1. Reentrancy Protection
+## 🛡️ Security Architecture
 
-Set a flag to prevent malicious contracts from reentering during external payments
+### 1. **Reentrancy Protection**
+
+Set a flag to prevent malicious contracts from reentering during external payments:
 
 ```solidity
 modifier nonReentrant() {
@@ -86,17 +93,19 @@ function withdrawFunds() external onlyOwner nonReentrant {...}
 ```
 
 
-### Attack Simulation
+---
+
+### 2. **Attack Simulation**
 
 The `ReentrancyAttack` contract demonstrates:
 
-1. Recursive call attempts during token purchases
-2. ETH balance manipulation checks
-3. Attack pattern logging through events
+- Recursive call attempts during token purchases
+- ETH balance manipulation checks
+- Attack pattern logging through events
 
 **Prevention Evidence:**
 
-```text
+```
 Test Results:
 
     Security: Reentrancy
@@ -106,7 +115,9 @@ Stolen tokens: 1n
 ```
 
 
-## Subscription Service Provider
+---
+
+## 🏢 Subscription Service Provider
 
 The `SubscriptionServiceProvider` contract acts as the service layer, simulating real-world subscription services. It manages available services, processes payments, and securely stores encrypted credentials for users.
 
@@ -119,36 +130,37 @@ The `SubscriptionServiceProvider` contract acts as the service layer, simulating
 - **Access Control:** Critical functions are restricted to the contract owner or the authorized token contract, protecting against unauthorized actions.
 - **Funds Handling:** The owner can withdraw funds to a designated payment receiver address.
 
-This contract ensures that only legitimate, paid users can access subscription credentials, and it integrates seamlessly with the rest of the system for secure and efficient subscription management.
+> This contract ensures that only legitimate, paid users can access subscription credentials, and it integrates seamlessly with the rest of the system for secure and efficient subscription management.
 
+---
 
-## Project Setup
+## 🚀 Project Setup
 
-1. Clone this repository
+**1. Clone this repository**
 
 ```bash
 git clone https://github.com/raynsj/FITE2010-token-as-a-subscription.git
-
 cd FITE2010-token-as-a-subscription
 ```
 
-2. Install packages
+**2. Install packages**
 
 ```bash
 npm init
-
 npm install --save-dev hardhat@2.22.19 @nomicfoundation/hardhat-chai-matchers@2.0.8 chai@4.5.0 @nomicfoundation/hardhat-ethers@3.0.8 ethers@6.13.5 @openzeppelin/contracts@4.7.3
 ```
 
-3. Compile and test contracts
+**3. Compile and test contracts**
 
 ```bash
 npx hardhat compile
-
 npx hardhat test
 ```
 
-**Expected Test Coverage:**
+
+---
+
+## ✅ Expected Test Coverage
 
 ```
   SharedSubscriptionToken
@@ -198,12 +210,13 @@ Stolen tokens: 1n
       ✔ Should only allow voting contract to kick users
       ✔ Should ensure service provider only accepts calls from token contract
 
-
   29 passing (2s)
 ```
 
 
-This implementation provides a robust framework for managing shared digital subscriptions while maintaining strong security guarantees and transparent governance.
+---
+
+> This implementation provides a robust framework for managing shared digital subscriptions while maintaining strong security guarantees and transparent governance.
 
 
 
