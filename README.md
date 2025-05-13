@@ -98,8 +98,11 @@ The `ReentrancyAttack` contract demonstrates:
 
 ```text
 Test Results:
-  ✓ Blocks recursive buyTokens calls (1934ms)
-  ✓ Limits stolen tokens to initial transaction (2s)
+
+    Security: Reentrancy
+Attack count (reentrant calls): 0n
+Stolen tokens: 1n
+      ✔ Should prevent reentrancy on buyTokens
 ```
 
 
